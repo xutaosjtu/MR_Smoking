@@ -2,7 +2,7 @@ setwd("../../../Dropbox/Smoking MR/")
 data = read.sas7bdat("data/k06113_waldenbergerf4_tra290713.sas7bdat")
 
 metabolites = colnames(data)[27:163]
-
+confounders = c("utalter","ucsex","utbmi", "my.alkkon")
 ##
 # variable explaination:
 #   utgewi: weight
@@ -25,6 +25,7 @@ data[,metabolites] = sapply(data[,metabolites],
                 } 
              )
 # •  Exclusion of non-European ethnicity
+# •  Exclude the samples without genotype measurements.
 
 
 # 5) Phenotypes
@@ -100,11 +101,14 @@ rst = summary(model)$coef
 write.csv(rst, file = "associations between genotype and smoking status_FSvsNS_model1.csv")
 
 # d) Investigate associations between genotype and possible confounding factors stated above.
-model = glm( utalter~ rs1051730, data=data)
-model = glm( ucsex~ rs1051730, data=data)
-model = glm( utbmi~ rs1051730, data=data)
-model = glm( my.alkkon~ rs1051730, data=data, family = binomial)
-model = glm( utalkkon~ rs1051730, data=data)
+rst=NULL
+for( i in c(confounders, "utalkkon")){
+  data$conf = data[,i]
+  model = glm( conf~ rs16969968, data=data)
+  rst = rbind(rst, summary(model)$coef[2,])
+}
+rownames(rst) = c(confounders, "utalkkon")
+write.csv(rst, "associations between rs16969968 and confounders.csv")
 
 # e) Test for interaction between genotype and smoking status in linear regression of metabolite levels, using a likelihood ratio test.
 rst = NULL
@@ -141,5 +145,32 @@ write.csv(rst, file = "associations of rs16969968 and metabolite traits_NS_model
 
 
 # g) Use instrumental variable (IV) analysis to obtain estimates of the causal associations between tobacco exposure (cotinine levels) and metabolite levels using two-sample methods i.e. taking effect estimate of rs1051730/rs16969968  cotinine association in independent samples (from JNCI paper ) and effect estimates of rs1051730/rs16969968  metabolites associations. 
+rst=NULL
+require(sem)
+for(i in metabolites){
+  data$m = data[,i]
+  model = tsls(m ~ my.cigreg , ~rs16969968, data, subset = which(!is.na(data$rs16969968)))
+  coef = cbind(model$coef, confint.default(model))
+  pvalue = 2*pnorm(-abs(coef[,1]*1.96/(coef[,1]-coef[,2])))
+  coef = cbind(coef, pvalue)
+  rst = rbind(rst, coef[2,])
+}
+rownames(rst) = metabolites
+write.csv(rst, file = "IV analysis of rs16969968_model.csv")
+
+rst=NULL
+require(sem)
+for(i in metabolites){
+  data$m = data[,i]
+  model = tsls(m ~ rs16969968 
+               +utalter+ucsex 
+               #+ utbmi + my.alkkon
+               , data
+               , subset = which(!is.na(data$rs16969968))
+               )
+  rst = rbind(rst, summary(model)$coef[2,])
+}
+rownames(rst) = metabolites
 
 # h) Produce graphs of change in metabolite levels per-allele increase of rs1051730/ rs16969968 against the corresponding change in metabolites per-unit increase in tobacco exposure (cotinine levels) respectively, where the “unit” corresponds to the per-allele effect of rs1051730/rs16969968 on cotinine levels. 
+
