@@ -145,32 +145,83 @@ write.csv(rst, file = "associations of rs16969968 and metabolite traits_NS_model
 
 
 # g) Use instrumental variable (IV) analysis to obtain estimates of the causal associations between tobacco exposure (cotinine levels) and metabolite levels using two-sample methods i.e. taking effect estimate of rs1051730/rs16969968  cotinine association in independent samples (from JNCI paper ) and effect estimates of rs1051730/rs16969968  metabolites associations. 
-rst=NULL
-require(sem)
-for(i in metabolites){
-  data$m = data[,i]
-  model = tsls(m ~ my.cigreg , ~rs16969968, data, subset = which(!is.na(data$rs16969968)))
-  coef = cbind(model$coef, confint.default(model))
-  pvalue = 2*pnorm(-abs(coef[,1]*1.96/(coef[,1]-coef[,2])))
-  coef = cbind(coef, pvalue)
-  rst = rbind(rst, coef[2,])
-}
-rownames(rst) = metabolites
-write.csv(rst, file = "IV analysis of rs16969968_model.csv")
+# rst=NULL
+# require(sem)
+# for(i in metabolites){
+#   data$m = data[,i]
+#   model = tsls(m ~ my.cigreg , ~rs16969968, data, subset = which(!is.na(data$rs16969968)))
+#   coef = cbind(model$coef, confint.default(model))
+#   pvalue = 2*pnorm(-abs(coef[,1]*1.96/(coef[,1]-coef[,2])))
+#   coef = cbind(coef, pvalue)
+#   rst = rbind(rst, coef[2,])
+# }
+# rownames(rst) = metabolites
+# write.csv(rst, file = "IV analysis of rs16969968_model.csv")
+# 
+# rst=NULL
+# require(sem)
+# for(i in metabolites){
+#   data$m = data[,i]
+#   model = tsls(m ~ rs16969968 
+#                +utalter+ucsex 
+#                #+ utbmi + my.alkkon
+#                , data
+#                , subset = which(!is.na(data$rs16969968))
+#                )
+#   rst = rbind(rst, summary(model)$coef[2,])
+# }
+# rownames(rst) = metabolites
 
-rst=NULL
-require(sem)
-for(i in metabolites){
-  data$m = data[,i]
-  model = tsls(m ~ rs16969968 
-               +utalter+ucsex 
-               #+ utbmi + my.alkkon
-               , data
-               , subset = which(!is.na(data$rs16969968))
-               )
-  rst = rbind(rst, summary(model)$coef[2,])
+## Taylor series expansion
+estimate.taylor = function(theta1, theta2, var1, var2, cov12=0){
+  return (theta1/theta2+theta1*var2/theta2^3 -cov12/theta2^2)
 }
-rownames(rst) = metabolites
+
+ci.Fieller = function(theta1, theta2, var1, var2, cov12=0){
+  a = (theta1/theta2)/(1-1.96^2*var2/theta2^2)
+  b = 1.96*sqrt(var1/theta1^2+var2/theta2^2-1.96*(var1/theta1^2)*(var2/theta2^2))
+  rst = data.frame(a*(1+b), a*(1-b))
+  return(rst)
+}
+
+variation.taylor = function(theta1, theta2, var1, var2, cov12=0){
+  return (theta1^2*var2/theta2^4 + var1/theta2^2 - 2*theta1*cov12/theta2^3)
+}
+
+snpmetabo = read.csv("IV analysis/associations of rs1051730 and metabolite traits_S_model2.csv",row.names = 1)
+theta2 = 138.72; var2 = ((138.72-97.91)/1.96)^2*2932
+rst = apply(snpmetabo, 1, 
+      function(x){
+        beta = estimate.taylor(theta1=x[1], theta2, var1 = x[2]^2*177, var2 = var2)
+        beta.var = variation.taylor(theta1=x[1], theta2, var1 = x[2]^2*177, var2 = var2)
+        beta.up = beta + 1.96*sqrt(beta.var)
+        beta.lo = beta - 1.96*sqrt(beta.var)
+        return(c(beta, beta.lo, beta.up))
+      }
+    )
+rst = t(rst)
+colnames(rst) = c("beta", "beta.lo", "beta.up")
 
 # h) Produce graphs of change in metabolite levels per-allele increase of rs1051730/ rs16969968 against the corresponding change in metabolites per-unit increase in tobacco exposure (cotinine levels) respectively, where the “unit” corresponds to the per-allele effect of rs1051730/rs16969968 on cotinine levels. 
 
+
+plotchange <- function(x,y, erx, ery){
+  xmax = max(x+erx);xmin = min(x-erx)
+  ymax = max(y+ery);ymin = min(y-ery)
+  
+  plot(x,y, xlim=c(xmin, xmax) , ylim = c(ymin, ymax), 
+       ylab = "metabolite change per allel", xlab = "metabolite change per 138.72 unite cotinine") 
+  arrows(x,y,x+erx,y, angle=90, length=.1) 
+  arrows(x,y,x-erx,y, angle=90, length=.1) 
+  arrows(x,y,x,y-ery, angle=90, length=.1) 
+  arrows(x,y,x,y+ery, angle=90, length=.1) 
+}
+
+metabo.percontine = read.csv("IV analysis of rs1051730_model2.csv", row.names = 1)
+metabo.perallele = read.csv("IV analysis/associations of rs1051730 and metabolite traits_S_model2.csv", row.names = 1)
+
+pdf("metabolite change per-allele against per unit continine_model2.pdf", width = 6, height = 9)
+plotchange( metabo.percontine[,1],metabo.perallele[,1], erx=metabo.percontine[,3]-metabo.percontine[,1],ery = metabo.perallele[,2]*1.96)
+abline(h = 0, col = "red", lty = 2)
+abline(v = 0, col = "red", lty = 2)
+dev.off()
